@@ -20,18 +20,27 @@ python src/main.py                    # Test in development
 
 ### WSL/Ubuntu Setup (Development & AI)
 ```bash
-# Open VS Code Insiders with WSL connection
-code-insiders .
+# 1. Open VS Code Insiders with "Connect to WSL"
+# 2. In WSL VS Code terminal, navigate to projects:
+cd ~
+mkdir -p projects  # Create projects folder if needed
+cd projects
 
-# Clone repo to WSL (first time only)
-git clone /mnt/c/source/caseClipper ~/caseclipper
-cd ~/caseclipper
+# 3. BEST PRACTICE: Copy from Windows (one-time setup)
+cp -r /mnt/c/source/caseClipper ./caseClipper
+cd caseClipper
 
-# Daily development
-git pull                              # Get Windows changes
+# 4. Verify Git repo is intact
+git status
+git log --oneline
+
+# 5. Open the WSL copy in VS Code
+# File > Open Folder > /home/yourusername/projects/caseClipper
+
+# Daily development workflow:
+git pull                              # Get any Windows changes  
 # ... do development work with Claude ...
-git add . && git commit -m "..."     # Save progress
-git push                              # Not needed (local only)
+git add . && git commit -m "..."     # Save progress locally
 ```
 
 ## ✅ DO in WSL (Ubuntu):
@@ -63,28 +72,69 @@ git push                              # Not needed (local only)
 
 ## 🔄 Daily Workflow:
 
+### Initial Setup (One Time):
+**In WSL VS Code (after "Connect to WSL"):**
+```bash
+# Navigate to your projects area
+cd ~
+mkdir -p projects
+cd projects
+
+# Copy Windows repo to WSL (FAST - one time only)
+cp -r /mnt/c/source/caseClipper ./caseClipper
+cd caseClipper
+
+# Verify everything copied correctly
+git status
+ls -la src/
+
+# Open this WSL folder in VS Code
+# File > Open Folder > /home/yourusername/projects/caseClipper
+```
+
+**No Windows prep needed** - your Git repo is ready to copy!
+
 ### Morning (Start Development):
 1. **Windows**: `git status` (check for uncommitted changes)
-2. **WSL**: `git pull` (get any Windows changes)
+2. **WSL**: `cd ~/caseclipper && git pull` (get any Windows changes)
 3. **WSL**: Develop with Claude AI assistance
 
 ### Evening (Test & Deploy):
 1. **WSL**: `git add . && git commit -m "Today's changes"`
-2. **Windows**: `git pull` (get WSL changes)
-3. **Windows**: Test full application
-4. **Windows**: Build executable if needed
+2. **WSL**: `git push` (if using remote) OR manual sync ↓
+3. **Windows**: `git pull` (get WSL changes)
+4. **Windows**: Test full application
+5. **Windows**: Build executable if needed
+
+### Manual Sync (No Remote Git):
+```bash
+# WSL → Windows (after development)
+# In WSL: git bundle create changes.bundle HEAD~n..HEAD
+# Copy bundle to Windows, then: git pull ./changes.bundle
+
+# OR use shared mounted directory for Git patches
+git format-patch HEAD~1 --stdout > /mnt/c/temp/latest.patch
+# In Windows: git apply C:\temp\latest.patch
+```
 
 ## 📁 Project Structure:
 ```
-Windows: C:\source\caseClipper\       # Main repo, testing, building
-WSL:     ~/caseclipper/               # Development clone, AI work
+Windows: C:\source\caseClipper\              # Main repo, testing, building
+WSL:     ~/projects/caseClipper/             # Development copy, AI work
 ```
 
 ## 🆘 Troubleshooting:
 
 **Performance Issues?**
-- Work in `~/caseclipper/` in WSL (not `/mnt/c/...`)
-- Use Git to sync, not file copying
+- ✅ **BEST**: Work in `~/caseclipper/` in WSL (native Linux filesystem)
+- ❌ **AVOID**: Working in `/mnt/c/...` (cross-filesystem performance hit)
+- ✅ Use one-time `cp -r` to copy initially, then Git for sync
+- ❌ Don't use `git clone /mnt/c/...` (slow cross-boundary operation)
+
+**Git Sync Strategies:**
+- **Best**: Use GitHub/GitLab remote for seamless sync
+- **Good**: Use Git bundles or patches for local-only sync  
+- **Avoid**: Frequent file copying across `/mnt/c/`
 
 **Git Conflicts?**
 - Always commit in WSL before switching to Windows

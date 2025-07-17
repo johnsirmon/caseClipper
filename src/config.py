@@ -16,7 +16,13 @@ class Config:
         "polling_interval": 1.0,
         "file_encoding": "utf-8",
         "enable_notifications": True,
-        "auto_create_directory": True
+        "notification_sound": False,
+        "auto_create_directory": True,
+        "log_level": "INFO",
+        "max_file_size_mb": 10,
+        "context_processing_enabled": True,
+        "context_processing_timeout": 30,
+        "performance_mode": True
     }
     
     def __init__(self, config_path: str = None):
@@ -122,3 +128,33 @@ class Config:
     def auto_create_directory(self) -> bool:
         """Get auto-create directory setting"""
         return self.config["auto_create_directory"]
+    
+    @property
+    def notification_sound(self) -> bool:
+        """Get notification sound setting"""
+        return self.config["notification_sound"]
+    
+    @property
+    def log_level(self) -> str:
+        """Get log level"""
+        return self.config["log_level"]
+    
+    @property
+    def max_file_size_mb(self) -> int:
+        """Get maximum file size in MB"""
+        return self.config["max_file_size_mb"]
+    
+    @property
+    def context_processing_enabled(self) -> bool:
+        """Get context processing enabled setting"""
+        return self.config["context_processing_enabled"]
+    
+    @property
+    def context_processing_timeout(self) -> int:
+        """Get context processing timeout in seconds"""
+        return self.config["context_processing_timeout"]
+    
+    @property
+    def performance_mode(self) -> bool:
+        """Get performance mode setting"""
+        return self.config["performance_mode"]

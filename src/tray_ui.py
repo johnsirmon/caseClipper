@@ -13,10 +13,12 @@ try:
     from .clipboard_monitor import ClipboardMonitor
     from .config import Config
     from .file_manager import FileManager
+    from .logger import get_logger
 except ImportError:
     from clipboard_monitor import ClipboardMonitor
     from config import Config
     from file_manager import FileManager
+    from logger import get_logger
 
 # Try to import plyer for notifications, fall back gracefully
 try:
@@ -42,15 +44,19 @@ class TrayUI:
         self.config = config
         self.clipboard_monitor = clipboard_monitor
         self.file_manager = file_manager
+        self.logger = get_logger(config)
         
         # Set up clipboard monitor callback
         self.clipboard_monitor.on_data_processed = self._on_data_processed
         
         self.icon = None
         self.running = False
+        
+        # Icon cache for performance
+        self._icon_cache = {}
     
     def _create_icon(self, active: bool = False) -> Image.Image:
-        """Create tray icon image
+        """Create tray icon image with caching
         
         Args:
             active (bool): Whether monitoring is active
@@ -58,6 +64,11 @@ class TrayUI:
         Returns:
             Image.Image: Icon image
         """
+        # Check cache first
+        cache_key = f"icon_{active}"
+        if cache_key in self._icon_cache:
+            return self._icon_cache[cache_key]
+        
         # Create a simple icon with different colors for active/inactive states
         size = 64
         image = Image.new('RGBA', (size, size), (0, 0, 0, 0))
@@ -80,6 +91,9 @@ class TrayUI:
         else:
             draw.text((16, 32), "OFF", fill=(0, 0, 0, 255))
         
+        # Cache the icon
+        self._icon_cache[cache_key] = image
+        
         return image
     
     def _create_menu(self) -> Menu:
@@ -99,6 +113,7 @@ class TrayUI:
             MenuItem("Test Clipboard", self._test_clipboard),
             Menu.SEPARATOR,
             MenuItem("Open Output Folder", self._open_output_folder),
+            MenuItem("Analyze Saved Files", self._analyze_saved_files),
             MenuItem("Status", self._show_status),
             Menu.SEPARATOR,
             MenuItem("Exit", self._quit_application)
@@ -144,6 +159,38 @@ class TrayUI:
             os.startfile(output_dir)
         except Exception as e:
             self._show_notification("Error", f"Could not open folder: {e}", error=True)
+    
+    def _analyze_saved_files(self, icon=None, item=None):
+        """Analyze all saved files and generate context protocols"""
+        import threading
+        
+        def analyze_files():
+            try:
+                self._show_notification("Analysis Started", "Analyzing saved files with Support Context Protocol...")
+                
+                # Run the analysis
+                results = self.file_manager.analyze_existing_files()
+                
+                # Create summary message
+                if 'error' in results:
+                    message = f"Analysis failed: {results['error']}"
+                else:
+                    message = (
+                        f"Analysis Complete!\n"
+                        f"Total files: {results['total_files']}\n"
+                        f"Processed: {results['processed_files']}\n"
+                        f"Failed: {results['failed_files']}\n"
+                        f"Avg length: {results['summary'].get('average_length', 0):.0f} chars"
+                    )
+                
+                self._show_notification("Analysis Complete", message)
+                
+            except Exception as e:
+                self._show_notification("Analysis Error", f"Error during analysis: {e}", error=True)
+        
+        # Run analysis in background thread to avoid blocking UI
+        analysis_thread = threading.Thread(target=analyze_files, daemon=True)
+        analysis_thread.start()
     
     def _show_status(self, icon=None, item=None):
         """Show current status"""
@@ -191,27 +238,33 @@ class TrayUI:
             )
     
     def _show_notification(self, title: str, message: str, error: bool = False):
-        """Show system notification
+        """Show system notification without sound
         
         Args:
             title (str): Notification title
             message (str): Notification message
             error (bool): Whether this is an error notification
         """
+        # Log the notification
+        if error:
+            self.logger.error(f"{title}: {message}")
+        else:
+            self.logger.info(f"{title}: {message}")
+        
         if not self.config.enable_notifications or not NOTIFICATIONS_AVAILABLE:
-            print(f"{title}: {message}")
             return
         
         try:
+            # Show notification without sound
             notification.notify(
                 title=title,
                 message=message,
-                timeout=5,
+                timeout=3,  # Reduced timeout
                 app_name="CaseClipSaver"
             )
         except Exception as e:
-            print(f"Notification error: {e}")
-            print(f"{title}: {message}")
+            self.logger.error(f"Notification error: {e}")
+            # Don't fall back to print in production
     
     def start(self):
         """Start the tray UI"""

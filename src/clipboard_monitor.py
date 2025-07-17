@@ -11,10 +11,12 @@ try:
     from .data_parser import DataParser
     from .file_manager import FileManager
     from .config import Config
+    from .logger import get_logger
 except ImportError:
     from data_parser import DataParser
     from file_manager import FileManager
     from config import Config
+    from logger import get_logger
 
 
 class ClipboardMonitor:
@@ -33,11 +35,16 @@ class ClipboardMonitor:
         self.file_manager = file_manager
         self.data_parser = DataParser()
         self.on_data_processed = on_data_processed
+        self.logger = get_logger(config)
         
         self.monitoring = False
         self.monitor_thread = None
         self.last_content = ""
         self.last_check_time = datetime.now()
+        
+        # Performance optimizations
+        self.max_content_length = config.max_file_size_mb * 1024 * 1024 if config else 10 * 1024 * 1024
+        self.content_hash_cache = set()  # Cache for detecting duplicates
     
     def start_monitoring(self) -> bool:
         """Start clipboard monitoring
@@ -52,10 +59,10 @@ class ClipboardMonitor:
             self.monitoring = True
             self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
             self.monitor_thread.start()
-            print("Clipboard monitoring started")
+            self.logger.info("Clipboard monitoring started")
             return True
         except Exception as e:
-            print(f"Error starting clipboard monitoring: {e}")
+            self.logger.error(f"Error starting clipboard monitoring: {e}")
             self.monitoring = False
             return False
     
@@ -68,7 +75,7 @@ class ClipboardMonitor:
         if self.monitor_thread and self.monitor_thread.is_alive():
             self.monitor_thread.join(timeout=2.0)
         
-        print("Clipboard monitoring stopped")
+        self.logger.info("Clipboard monitoring stopped")
     
     def is_monitoring(self) -> bool:
         """Check if monitoring is active
@@ -85,14 +92,28 @@ class ClipboardMonitor:
                 current_content = self._get_clipboard_content()
                 
                 if current_content and current_content != self.last_content:
-                    self._process_clipboard_content(current_content)
+                    # Check content length limit
+                    if len(current_content) > self.max_content_length:
+                        self.logger.warning(f"Content too large ({len(current_content)} bytes), skipping")
+                        continue
+                    
+                    # Check for duplicate content using hash
+                    content_hash = hash(current_content)
+                    if content_hash not in self.content_hash_cache:
+                        self.content_hash_cache.add(content_hash)
+                        self._process_clipboard_content(current_content)
+                        
+                        # Limit cache size
+                        if len(self.content_hash_cache) > 100:
+                            self.content_hash_cache.clear()
+                    
                     self.last_content = current_content
                 
                 self.last_check_time = datetime.now()
                 time.sleep(self.config.polling_interval)
                 
             except Exception as e:
-                print(f"Error in monitoring loop: {e}")
+                self.logger.error(f"Error in monitoring loop: {e}")
                 time.sleep(self.config.polling_interval)
     
     def _get_clipboard_content(self) -> Optional[str]:
@@ -105,7 +126,7 @@ class ClipboardMonitor:
             content = pyperclip.paste()
             return content if content else None
         except Exception as e:
-            print(f"Error accessing clipboard: {e}")
+            self.logger.error(f"Error accessing clipboard: {e}")
             return None
     
     def _process_clipboard_content(self, content: str):
@@ -115,32 +136,37 @@ class ClipboardMonitor:
             content (str): Clipboard content to process
         """
         try:
-            print(f"Processing clipboard content (length: {len(content)})")
+            self.logger.debug(f"Processing clipboard content (length: {len(content)})")
             
             # Check if content contains valid case data
             if not self.data_parser.is_valid_case_data(content):
-                print("No valid case data found in clipboard")
+                self.logger.debug("No valid case data found in clipboard")
                 return
             
-            print("Valid case data detected!")
+            self.logger.info("Valid case data detected!")
             
             # Extract IDs and generate filename
             filename = self.data_parser.generate_filename(content)
             if not filename:
-                print("Could not generate filename from clipboard content")
+                self.logger.warning("Could not generate filename from clipboard content")
                 return
             
-            print(f"Generated filename: {filename}")
+            self.logger.info(f"Generated filename: {filename}")
             
             # Get metadata
             metadata = self.data_parser.extract_metadata(content)
             
-            # Save the file
-            success, message = self.file_manager.save_with_metadata(
-                content, filename, metadata
-            )
+            # Save the file with enhanced processing (if enabled)
+            if self.config.context_processing_enabled:
+                success, message = self.file_manager.save_enhanced_case_data(
+                    content, filename, metadata
+                )
+            else:
+                success, message = self.file_manager.save_with_metadata(
+                    content, filename, metadata
+                )
             
-            print(f"Save result: success={success}, message={message}")
+            self.logger.info(f"Save result: success={success}, message={message}")
             
             # Prepare result data
             result_data = {
@@ -157,13 +183,13 @@ class ClipboardMonitor:
                 self.on_data_processed(result_data)
             
             if success:
-                print(f"✓ Case data saved: {filename}")
+                self.logger.info(f"✓ Case data saved: {filename}")
             else:
-                print(f"✗ Failed to save case data: {message}")
+                self.logger.error(f"✗ Failed to save case data: {message}")
                 
         except Exception as e:
             error_msg = f"Error processing clipboard content: {e}"
-            print(error_msg)
+            self.logger.exception(error_msg)
             
             if self.on_data_processed:
                 self.on_data_processed({
